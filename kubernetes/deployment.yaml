@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tmc-audit-logger-deployment
+  namespace: tmc-audit-logger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tmc-audit-logger
+  template:
+    metadata:
+      labels:
+        app: tmc-audit-logger
+    spec:
+      containers:
+      - name: tmcreader
+        image: anwood340/tmc_audit_streamer:0.0.1-streamer
+        resources:
+          requests:
+            cpu: 50m
+            memory: 50Mi
+          limits:
+            cpu: 100m
+            memory: 100Mi
+        env:
+          - name: LOG_FILE_PATH
+            value: /tmc/audit.log
+          - name: LOG_LEVEL
+            value: INFO
+          - name: CSP_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: tmc-audit-logger
+                key: csp_token
+          - name: TMC_URL
+            valueFrom:
+              secretKeyRef:
+                name: tmc-audit-logger
+                key: tmc_url
+        volumeMounts:
+          - name: shared-logs
+            mountPath: /tmc
+
+      - name: fluentd
+        image: anwood340/tmc_audit_streamer:0.0.1-fluentd
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+          limits:
+            cpu: 200m
+            memory: 200Mi
+        env:
+          - name: AUDIT_LOG_PATH
+            value: /tmc
+          - name: AUDIT_LOG_FILENAME
+            value: audit.log
+          - name: ARIA_LOG_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: tmc-audit-logger
+                key: aria_token
+          - name: ARIA_LOG_URL
+            valueFrom:
+              secretKeyRef:
+                name: tmc-audit-logger
+                key: aria_url
+        volumeMounts:
+          - name: config-volume
+            mountPath: /etc/fluent
+            readOnly: true
+          - name: shared-logs
+            mountPath: /tmc
+
+      volumes:
+        - name: config-volume
+          configMap:
+            name: fluentd-config
+        - name: shared-logs
+          emptyDir: {}
+

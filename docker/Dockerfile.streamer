@@ -1,0 +1,16 @@
+# Use a slim variant of the Python image
+FROM python:3.9-slim
+
+# Combine update, install, and cleanup in one layer to reduce size
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc libffi-dev && \
+    pip install requests && \
+    apt-get purge -y --auto-remove gcc libffi-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /tmc
+
+# Copy your script into the container
+COPY tmc_audit_streamer.py /tmc_audit_streamer.py
+
+# Command to run your script
+CMD ["python", "/tmc_audit_streamer.py"]
