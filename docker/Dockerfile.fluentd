@@ -2,18 +2,30 @@
 # See: https://github.com/ruby-concurrency/concurrent-ruby/issues/1023 and https://github.com/ruby/ruby/pull/9371
 FROM ruby:3.2.2-slim
 
+COPY aol.h2o.pem /usr/local/share/ca-certificates/aol.h2o.crt
+RUN update-ca-certificates
+
 RUN apt-get update && apt-get install -y \
     build-essential \
     libxml2-dev \
     libxslt-dev \
-    # Add any other dependencies your Fluentd setup might need
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Fluentd
 RUN gem install fluentd -v "~> 1.16.3"
 RUN gem install concurrent-ruby -v 1.2.3
 
+# Log Intelligence Plugin, used for AOFL SaaS
 RUN gem install fluent-plugin-vmware-log-intelligence -v 2.0.8
+
+# Log Insight Plugin, used for AOFL Self-Managed
+RUN wget https://github.com/vmware/fluent-plugin-vmware-loginsight/releases/download/v1.4.2/fluent-plugin-vmware-loginsight-1.4.2.gem
+RUN gem install fluent-plugin-vmware-loginsight-1.4.2.gem
+
+RUN groupadd -g 1000 app && \
+    useradd -u 1000 --create-home --gid 1000 app
+USER app
 
 # Default command to run Fluentd
 CMD ["fluentd"]

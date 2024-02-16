@@ -1,0 +1,3 @@
+kubernetes/**/secret.yaml
+venv
+.idea

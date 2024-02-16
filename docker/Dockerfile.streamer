@@ -12,5 +12,9 @@ RUN apt-get update && \
 # Copy your script into the container
 COPY tmc_audit_streamer.py /tmc_audit_streamer.py
 
+RUN groupadd -g 1000 app && \
+    useradd -u 1000 --create-home --gid 1000 app
+USER app
+
 # Command to run your script
 CMD ["python", "/tmc_audit_streamer.py"]

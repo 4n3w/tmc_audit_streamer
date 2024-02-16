@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tmc-audit-logger-deployment
+  namespace: tmc-audit-logger
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: ""
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tmc-audit-logger
+  template:
+    metadata:
+      labels:
+        app: tmc-audit-logger
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: "RuntimeDefault"
+      containers:
+      - name: tmcreader
+        image: harbor-repo.vmware.com/gtt_tap/tmc_audit_streamer:0.0.5-streamer
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ "ALL" ]
+        resources:
+          requests:
+            cpu: 50m
+            memory: 50Mi
+          limits:
+            cpu: 100m
+            memory: 100Mi
+        env:
+          - name: LOG_FILE_PATH
+            value: /tmc/audit.log
+          - name: LOG_LEVEL
+            value: INFO
+          - name: CSP_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: tmc-audit-logger
+                key: csp_token
+          - name: TMC_URL
+            valueFrom:
+              secretKeyRef:
+                name: tmc-audit-logger
+                key: tmc_url
+          - name: ARIA_LOG_URL
+            valueFrom:
+              secretKeyRef:
+                name: tmc-audit-logger
+                key: aria_url
+        volumeMounts:
+          - name: config-volume
+            mountPath: /etc/fluent
+            readOnly: true
+          - name: shared-logs
+            mountPath: /tmc
+
+      - name: fluentd
+        image: harbor-repo.vmware.com/gtt_tap/tmc_audit_streamer:0.0.5-fluentd
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ "ALL" ]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+          limits:
+            cpu: 200m
+            memory: 200Mi
+        env:
+          - name: AUDIT_LOG_PATH
+            value: /tmc
+          - name: AUDIT_LOG_FILENAME
+            value: audit.log
+          - name: ARIA_LOG_URL
+            valueFrom:
+              secretKeyRef:
+                name: tmc-audit-logger
+                key: aria_url
+        volumeMounts:
+          - name: config-volume
+            mountPath: /etc/fluent
+            readOnly: true
+          - name: shared-logs
+            mountPath: /tmc
+
+      volumes:
+        - name: config-volume
+          configMap:
+            name: fluentd-config
+        - name: shared-logs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluentd-config
+  namespace: tmc-audit-logger
+data:
+  fluent.conf: |-
+    <source>
+      @type tail
+      path "#{ENV['TMC_AUDIT_LOG_PATH'] || '/tmc/audit.log'}"
+      pos_file "#{ENV['TMC_AUDIT_LOG_POS_PATH'] || '/tmc/audit.log.pos'}"
+      read_from_head true
+      tag tmc_audit.log
+      format none
+      time_format %d/%b/%Y:%H:%M:%S %z
+    </source>
+
+    <match tmc_audit.**>
+      @type vmware_loginsight
+      http_conn_debug false # set this to true to troubleshoot
+      host "#{ENV['ARIA_LOG_URL']}"
+      port 9543
+      scheme https
+      ssl_verify false # If you're serious, set this to true.
+      <buffer>
+        @type file  # File buffers are more reliable than memory buffers
+        path "#{ENV['TMC_AUDIT_LOG_BUFFER'] || '/tmc/audit_buffer'}"
+        flush_interval 4s  # Adjust based on your needs
+        chunk_limit_size 10MB  # Adjust based on your needs
+        total_limit_size 50MB  # Adjust based on your needs
+        overflow_action block  # Prevents buffer overflow
+        retry_max_times 3
+      </buffer>
+    </match>
